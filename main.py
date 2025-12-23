@@ -1,37 +1,84 @@
-import os
+import sys, os
+import traceback
+
+import json
+import time
+import datetime
+from line_profiler import profile
 
 import OpenEXR
 
-print('starting')
+import faulthandler
+faulthandler.enable()
 
-def compression_name(path):
-    f = OpenEXR.InputFile(path)
-    comp = f.header()['compression']
-    # Map known OpenEXR constants to readable names
-    comp_map = {
-        OpenEXR.NO_COMPRESSION: "NO_COMPRESSION",
-        OpenEXR.RLE_COMPRESSION: "RLE_COMPRESSION",
-        OpenEXR.ZIPS_COMPRESSION: "ZIPS_COMPRESSION",
-        OpenEXR.ZIP_COMPRESSION: "ZIP_COMPRESSION",
-        OpenEXR.PIZ_COMPRESSION: "PIZ_COMPRESSION",
-        OpenEXR.PXR24_COMPRESSION: "PXR24_COMPRESSION",
-        OpenEXR.B44_COMPRESSION: "B44_COMPRESSION",
-        OpenEXR.B44A_COMPRESSION: "B44A_COMPRESSION",
-        OpenEXR.DWAA_COMPRESSION: "DWAA_COMPRESSION",
-        OpenEXR.DWAB_COMPRESSION: "DWAB_COMPRESSION",
-    }
-    print(comp)
+import recompress_oiio
+
+COMPRESSION_METHODS = {
+    "NO_COMPRESSION",
+    "RLE_COMPRESSION",
+    "ZIPS_COMPRESSION",
+    "ZIP_COMPRESSION",
+    "PIZ_COMPRESSION",
+    "PXR24_COMPRESSION",
+    "B44_COMPRESSION",
+    "B44A_COMPRESSION",
+    "DWAA_COMPRESSION",
+    "DWAB_COMPRESSION",
+    "HTJ2K256_COMPRESSION",
+    "HTJ2K32_COMPRESSION"
+}
 
 image_dir = "./images"
+temp_dir = "./temp"
+results = []
+result_dir = "./results"
 
-for root, dirs, files in os.walk(image_dir):
-    for filename in files:
-        file_path = os.path.join(root, filename)
+def remove_files(dir):
 
-        if file_path.endswith(".exr"):
-            print(file_path)
-            compression_name(file_path)
-print('ended')
+    for root, dirs, files in os.walk(dir):
+        for filename in files:
+            file_path = os.path.join(root, filename)
+            print('file', file_path)
+            os.remove(file_path)
+
+@profile
+def go_over_files(compression_method):
+    start = time.perf_counter()
+    compression_name = compression_method.split("_")[0]
+    for root, dirs, files in os.walk(image_dir):
+        for filename in files:
+            old_file_path = os.path.join(root, filename)
+
+            if old_file_path.endswith(".exr"):
+                filename_parts = filename.split(".")
+                exr = OpenEXR.InputFile(old_file_path)
+                new_file_path = os.path.join(temp_dir, filename_parts[0].split('_')[0] + '_' + compression_name + '.' + filename_parts[1])
+                s = time.process_time()  # start time
+
+
+                recompress_oiio.recompress(old_file_path, new_file_path, compression=compression_method)
+
+                e = time.process_time()  # end time
+                duration = e - s
+                results.append({"compression": compression_method,"file": str(old_file_path), "duration": duration})
+
+def go_over_compression():
+    for compression in COMPRESSION_METHODS:
+        go_over_files(compression)
+    # go_over_files('PIZ_COMPRESSION')
+
+    remove_files(temp_dir)
+
+    result_file = result_dir + '/' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + '.json'
+    # json.dump(results, result_file)
+
+
+    with open('data.json', 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+
+
+go_over_compression()
+print(results)
 
 
 
