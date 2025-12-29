@@ -187,20 +187,20 @@ def plot_results():
     plt.show()
 
 def plot_cores(avg_stats, stat):
-    # method_labels = avg_stats['method'].unique()
-    method_labels = COMPRESSION_METHODS
-    core_labels = sorted(avg_stats['num_threads'].unique())
+    method_labels = avg_stats['method'].unique()
+    # method_labels = COMPRESSION_METHODS
+    core_labels = sorted(avg_stats['cores'].unique())
 
     cores_to_plot = [1, 16]
 
-    new_avg = avg_stats.groupby(['num_threads', 'method'], as_index=False).agg({
+    new_avg = avg_stats.groupby(['cores', 'method'], as_index=False).agg({
         'read_ms': 'mean',
         'write_ms': 'mean',
         'size_kb': 'mean',
         'cpu_ms': 'mean'
     }).round(2)
 
-    pivot_data = new_avg.pivot(index='method', columns='num_threads', values=stat)
+    pivot_data = new_avg.pivot(index='method', columns='cores', values=stat)
 
     x = range(len(pivot_data))
     width = 0.35
@@ -226,19 +226,21 @@ def plot_cores(avg_stats, stat):
 
 
 def plot_unique_groups(avg_stats, unique_groups):
-    unique_groups = avg_stats['image_group'].unique()
     n_groups = len(unique_groups)
 
     fig, axes = plt.subplots(n_groups, 1, figsize=(12, 4 * n_groups))
 
     for i, img_group in enumerate(unique_groups):
-        curr_df = avg_stats[avg_stats['image_group'] == img_group]
+        curr_df = avg_stats[
+            (avg_stats['image_group'] == img_group) &
+            avg_stats['cores'].isin(avg_stats['cores'].unique())
+            ]
 
         colors = [METHOD_COLOR_MAP[method] for method in curr_df['method']]
         axes[i].scatter(curr_df['read_ms'], curr_df['size_kb'],
                         c = colors,
                         alpha=0.8, edgecolors='black', linewidth=2,
-                        s=100)  # Add size for visibility
+                        s=100)
 
         for j, row in avg_stats.iterrows():
             axes[i].annotate(f"{(row['method'].split('_')[0])}",
@@ -275,7 +277,7 @@ def analyse(dir_path):
 
     df['image_group'] = df['file'].map(image_mapping).fillna('Other')
 
-    avg_stats = df.groupby(['num_threads', 'method', 'image_group'], as_index=False).agg({
+    avg_stats = df.groupby(['cores', 'method', 'image_group'], as_index=False).agg({
         'read_ms': 'mean',
         'write_ms': 'mean',
         'size_kb': 'mean',
@@ -292,7 +294,8 @@ def analyse(dir_path):
 
 
 
-    plot_unique_groups(avg_stats, unique_groups)
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups)
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups)
     plot_cores(avg_stats, 'read_ms')
     plot_cores(avg_stats, 'write_ms')
     plot_cores(avg_stats, 'size_kb')

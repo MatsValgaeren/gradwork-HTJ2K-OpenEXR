@@ -39,7 +39,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 image_dir = "./images"
 temp_dir = "./temp"
 results = []
-passes = 10
+passes = 1
 result_dir = "./results"
 pc_usage = {}
 
@@ -51,7 +51,7 @@ def remove_files(dir):
             # os.remove(file_path)
 
 @profile
-def go_over_files(num_threads, compression_method):
+def go_over_files(num_cores, compression_method):
     start = time.perf_counter()
     compression_name = compression_method.split("_")[0]
     for root, dirs, files in os.walk(image_dir):
@@ -65,7 +65,7 @@ def go_over_files(num_threads, compression_method):
                 print('new', new_file_path)
                 oiio_comp = compression_map.get(compression_method)
 
-                compression_res = recompress_oiio.recompress(old_file_path, new_file_path, compression=oiio_comp, passes=passes)
+                compression_res = recompress_oiio.recompress(old_file_path, new_file_path, comp=oiio_comp, passes=passes)
 
 
                 res = {'copy': [], 'read': []}
@@ -75,7 +75,7 @@ def go_over_files(num_threads, compression_method):
                     dst_copy.close()
                     start = time.perf_counter()
                     shutil.copyfile(new_file_path, dst_copy.name)
-                    # Optionally fsync to force write to physical disk
+
                     with open(dst_copy.name, "rb+") as f:
                         f.flush()
                         try:
@@ -95,15 +95,14 @@ def go_over_files(num_threads, compression_method):
                 dur_copy = np.mean(res['copy'])
 
                 results.append({"processor": platform.processor(),
-                                "num_threads": num_threads,
-                                "cpu_ms": cpu_usage,
-                                "ram_usage": ram_usage[2],
+                                "cores": num_cores,
                                 "method": compression_method,
                                 "file": filename[:-7],
                                 "read_ms": dur_read,
                                 "write_ms": compression_res['write_ms'],
-                                "wall_ms": compression_res['wall_ms'],
                                 "size_kb": compression_res['size_kb'],
+                                "cpu_ms": cpu_usage,
+                                "ram_usage": ram_usage[2],
                                 "copy": dur_copy})
 
 def go_over_compression(num_threads):
