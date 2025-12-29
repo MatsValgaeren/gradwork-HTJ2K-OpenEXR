@@ -3,10 +3,12 @@ import json
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 
 result_dir = "./results"
 
-COMPRESSION_METHODS = {
+COMPRESSION_METHODS = [
     "NO_COMPRESSION",
     "RLE_COMPRESSION",
     "ZIPS_COMPRESSION",
@@ -19,9 +21,115 @@ COMPRESSION_METHODS = {
     "DWAB_COMPRESSION",
     "HTJ2K256_COMPRESSION",
     "HTJ2K32_COMPRESSION"
+]
+
+colors = sns.color_palette("husl", 12)
+
+METHOD_COLOR_MAP = {}
+for i, method in enumerate(COMPRESSION_METHODS):
+    METHOD_COLOR_MAP[method] = colors[i]
+
+image_mapping = {
+    # === UNUSUAL PIXEL IMAGES (edge cases, NaNs, extremes) ===
+    'AllHalfValues': 'Unusual Pixels',
+    'BrightRings': 'Unusual Pixels',
+    'BrightRingsNanInf': 'Unusual Pixels',
+    'GammaChart': 'Unusual Pixels',
+    'GrayRampsDiagonal': 'Unusual Pixels',
+    'GrayRampsHorizontal': 'Unusual Pixels',
+    'RgbRampsDiagonal': 'Unusual Pixels',
+    'SquaresSwirls': 'Unusual Pixels',
+    'WideColorGamut': 'Unusual Pixels',
+    'WideFloatRange': 'Unusual Pixels',
+
+    # === SCANLINE IMAGES (traditional VFX plates) ===
+    'Blobbies': 'Scanline',
+    'CandleGlass': 'Scanline',
+    'Cannon': 'Scanline',
+    'Carrots': 'Scanline',
+    'Desk': 'Scanline',
+    'MtTamWest': 'Scanline',
+    'PrismsLenses': 'Scanline',
+    'StillLife': 'Scanline',
+    'Tree': 'Scanline',
+
+    # === TILED IMAGES (progressive/HTJ2K optimized) ===
+    'GoldenGate': 'Tiled',
+    'Ocean': 'Tiled',
+    'Spirals': 'Tiled',
+
+    # === CHROMATICITIES (color space tests) ===
+    'Rec709': 'Chromaticities',
+    'Rec709_YC': 'Chromaticities',
+    'XYZ': 'Chromaticities',
+    'XYZ_YC': 'Chromaticities',
+
+    # === LUMINANCE/CHROMA IMAGES ===
+    'CrissyField': 'LuminanceChroma',
+    'Flowers': 'LuminanceChroma',
+    'Garden': 'LuminanceChroma',
+    'MtTamNorth': 'LuminanceChroma',
+    'StarField': 'LuminanceChroma',
+
+    # === MULTIPART / MULTIVIEW BEACHBALL (stereo, complex AOVs) ===
+    'multipart.0001': 'MultiPart',
+    'multipart.0002': 'MultiPart',
+    'multipart.0003': 'MultiPart',
+    'multipart.0004': 'MultiPart',
+    'multipart.0005': 'MultiPart',
+    'multipart.0006': 'MultiPart',
+    'multipart.0007': 'MultiPart',
+    'multipart.0008': 'MultiPart',
+    'singlepart.0001': 'MultiPart',
+    'singlepart.0002': 'MultiPart',
+    'singlepart.0003': 'MultiPart',
+    'singlepart.0004': 'MultiPart',
+    'singlepart.0005': 'MultiPart',
+    'singlepart.0006': 'MultiPart',
+    'singlepart.0007': 'MultiPart',
+    'singlepart.0008': 'MultiPart',
+
+    # === MULTI-VIEW IMAGES (stereo pairs) ===
+    'Adjuster': 'MultiView',
+    'Balls': 'MultiView',
+    'Fog': 'MultiView',
+    'Impact': 'MultiView',
+    'LosPadres': 'MultiView',
+
+    # === MULTI-RESOLUTION (mipmaps, env maps) ===
+    'Bonita': 'MultiResolution',
+    'ColorCodedLevels': 'MultiResolution',
+    'Kapaa': 'MultiResolution',
+    'KernerEnvCube': 'MultiResolution',
+    'KernerEnvLatLong': 'MultiResolution',
+    'MirrorPattern': 'MultiResolution',
+    'OrientationCube': 'MultiResolution',
+    'OrientationLatLong': 'MultiResolution',
+    'PeriodicPattern': 'MultiResolution',
+    'StageEnvCube': 'MultiResolution',
+    'StageEnvLatLong': 'MultiResolution',
+    'WavyLinesCube': 'MultiResolution',
+    'WavyLinesLatLong': 'MultiResolution',
+    'WavyLinesSphere': 'MultiResolution',
+
+    # === STEREO / DEEP IMAGES ===
+    'v2/Stereo/Balls': 'StereoDeep',
+    'v2/Stereo/Ground': 'StereoDeep',
+    'v2/Stereo/Leaves': 'StereoDeep',
+    'v2/Stereo/Trunks': 'StereoDeep',
+    'v2/Stereo/composited': 'StereoDeep',
+    'v2/LeftView/Balls': 'StereoLeft',
+    'v2/LeftView/Ground': 'StereoLeft',
+    'v2/LeftView/Leaves': 'StereoLeft',
+    'v2/LeftView/Trunks': 'StereoLeft',
+    'v2/LowResLeftView/Balls': 'StereoLowRes',
+    'v2/LowResLeftView/Ground': 'StereoLowRes',
+    'v2/LowResLeftView/Leaves': 'StereoLowRes',
+    'v2/LowResLeftView/Trunks': 'StereoLowRes',
+    'v2/LowResLeftView/composited': 'StereoLowRes'
 }
 
-analysed = {m: {"count": 0, "total_dur": 0, "total_read_duration": 0, "avg_read_duration": 0, "total_write_duration": 0, "avg_write_duration": 0, "total_file_size": 0, "avg_file_size": 0} for m in COMPRESSION_METHODS}
+analysed = {m: {"count": 0, "total_dur": 0, "total_read_duration": 0, "avg_read_duration": 0, "total_write_duration": 0, "avg_write_duration": 0, "total_wall_duration": 0, "avg_wall_duration": 0, "total_file_size": 0, "avg_file_size": 0, "max_cpu": 0, "max_ram": 0} for m in COMPRESSION_METHODS}
 
 def print_results():
     for item in analysed:
@@ -31,6 +139,7 @@ def print_results():
         print(item, 'avg read time of', analysed[item]["avg_read_duration"], 'milliseconds')
         print(item, 'avg compression time of', analysed[item]["avg_write_duration"], 'milliseconds')
         print(item, 'avg file size of', analysed[item]["avg_file_size"], 'kb')
+        print(item, 'max cpu', analysed[item]["max_cpu"], 'milliseconds')
 
 def plot_results():
     x = []
@@ -44,9 +153,9 @@ def plot_results():
             }
 
     for comp in analysed:
-        x.append(analysed[comp]["avg_write_duration"])
-        z.append(analysed[comp]["total_file_size"])
-        y.append(analysed[comp]["avg_read_duration"])
+        x.append(analysed[comp]["avg_read_duration"])
+        z.append(analysed[comp]["avg_write_duration"])
+        y.append(analysed[comp]["total_file_size"])
         labels.append(comp.replace('_COMPRESSION', ''))
 
 
@@ -77,28 +186,118 @@ def plot_results():
     # plt.savefig('exr_benchmark.pdf', bbox_inches='tight', dpi=300)  # Publication ready
     plt.show()
 
+def plot_cores(avg_stats, stat):
+    # method_labels = avg_stats['method'].unique()
+    method_labels = COMPRESSION_METHODS
+    core_labels = sorted(avg_stats['num_threads'].unique())
 
-def analyse(dir):
-    for root, dirs, files in os.walk(dir):
+    cores_to_plot = [1, 16]
+
+    new_avg = avg_stats.groupby(['num_threads', 'method'], as_index=False).agg({
+        'read_ms': 'mean',
+        'write_ms': 'mean',
+        'size_kb': 'mean',
+        'cpu_ms': 'mean'
+    }).round(2)
+
+    pivot_data = new_avg.pivot(index='method', columns='num_threads', values=stat)
+
+    x = range(len(pivot_data))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    ax.bar([i - width / 2 for i in x], pivot_data[cores_to_plot[0]],
+           width, label=f'{cores_to_plot[0]} Core vs ' + stat, alpha=0.8)
+
+    if len(cores_to_plot) > 1:
+        ax.bar([i + width / 2 for i in x], pivot_data[cores_to_plot[1]],
+               width, label=f'{cores_to_plot[1]} Core vs ' + stat, alpha=0.8)
+
+    plt.title(stat + ' VS Cores')
+
+    # plt.xlabel('Number of Threads')
+    plt.ylabel('Cores')
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([m.split('_')[0] for m in method_labels], rotation=45)
+    print('show')
+    plt.show()
+
+
+def plot_unique_groups(avg_stats, unique_groups):
+    unique_groups = avg_stats['image_group'].unique()
+    n_groups = len(unique_groups)
+
+    fig, axes = plt.subplots(n_groups, 1, figsize=(12, 4 * n_groups))
+
+    for i, img_group in enumerate(unique_groups):
+        curr_df = avg_stats[avg_stats['image_group'] == img_group]
+
+        colors = [METHOD_COLOR_MAP[method] for method in curr_df['method']]
+        axes[i].scatter(curr_df['read_ms'], curr_df['size_kb'],
+                        c = colors,
+                        alpha=0.8, edgecolors='black', linewidth=2,
+                        s=100)  # Add size for visibility
+
+        for j, row in avg_stats.iterrows():
+            axes[i].annotate(f"{(row['method'].split('_')[0])}",
+                            (row['read_ms'], row['size_kb']),
+                            xytext=(5, 5), textcoords='offset points',
+                            fontsize=6, fontweight='bold', ha='left')
+
+        axes[i].set_xlabel('Read Time (ms)')
+        axes[i].set_ylabel('Size (KB)')
+        axes[i].set_title(f'{img_group} - Read Time vs Size')
+
+    plt.tight_layout()
+    plt.show()
+
+def analyse(dir_path):
+    plt.style.use('seaborn-v0_8-paper')
+
+    all_data = []
+
+    for root, dirs, files in os.walk(dir_path):
         for filename in files:
-            print('start')
-            file_path = os.path.join(root, filename)
-            print('filepath ', file_path)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                json_data = json.load(f)
-                for item in json_data:
-                    comp = item['compression']
-                    curr_read_duration = item['read_duration']
-                    curr_write_duration = item['write_duration']
-                    curr_file_size = item['file_size']
+            if filename.endswith('.json'):
+                file_path = os.path.join(root, filename)
+                try:
+                    df = pd.read_json(file_path)
+                    all_data.append(df)
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
 
-                    analysed[comp]["total_read_duration"] += curr_read_duration
-                    analysed[comp]["total_write_duration"] += curr_write_duration
-                    analysed[comp]["total_file_size"] += curr_file_size
-                    analysed[comp]["count"] += 1
+    df = pd.concat(all_data, ignore_index=True)
 
-    print_results()
-    plot_results()
+    exclude_methods = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PIZ_COMPRESSION']
+    df = df[~df['method'].isin(exclude_methods)]
+
+    df['image_group'] = df['file'].map(image_mapping).fillna('Other')
+
+    avg_stats = df.groupby(['num_threads', 'method', 'image_group'], as_index=False).agg({
+        'read_ms': 'mean',
+        'write_ms': 'mean',
+        'size_kb': 'mean',
+        'cpu_ms': 'mean'
+    }).round(2)
+
+    print("Summary Statistics:")
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
+        print(avg_stats.sort_values(['image_group', 'size_kb'], ascending=True))
+
+    unique_groups = avg_stats['image_group'].unique()
+
+    plt.rcParams.update({'font.size': 12, 'savefig.dpi': 300})
+
+
+
+    plot_unique_groups(avg_stats, unique_groups)
+    plot_cores(avg_stats, 'read_ms')
+    plot_cores(avg_stats, 'write_ms')
+    plot_cores(avg_stats, 'size_kb')
+
+
 
 
 analyse(result_dir)
