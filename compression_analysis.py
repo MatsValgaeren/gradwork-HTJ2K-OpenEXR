@@ -224,6 +224,8 @@ def plot_cores(avg_stats, stat):
     print('show')
     plt.show()
 
+from scipy.stats import friedmanchisquare
+import scikit_posthocs as sp
 
 def plot_unique_groups(avg_stats, unique_groups):
     n_groups = len(unique_groups)
@@ -255,6 +257,33 @@ def plot_unique_groups(avg_stats, unique_groups):
     plt.tight_layout()
     plt.show()
 
+def friedman_test(df, metric, cores, machine=None):
+    # Filter to one condition
+    sub = df[df['cores'] == cores].copy()
+    if machine is not None:
+        sub = sub[sub['machine'] == machine]
+
+    # Average repeated runs per image/method
+    sub = (
+        sub.groupby(['file', 'method'])[metric]
+        .mean()
+        .reset_index()
+    )
+
+    # Pivot to image × method
+    pivot = sub.pivot(index='file', columns='method', values=metric)
+
+    # Drop images missing any method
+    pivot = pivot.dropna()
+
+    print(f"Images used: {pivot.shape[0]}")
+    print(f"Methods: {pivot.shape[1]}")
+
+    # Friedman test
+    stat, p = friedmanchisquare(*[pivot[col] for col in pivot.columns])
+
+    return stat, p, pivot
+
 def analyse(dir_path):
     plt.style.use('seaborn-v0_8-paper')
 
@@ -272,8 +301,8 @@ def analyse(dir_path):
 
     df = pd.concat(all_data, ignore_index=True)
 
-    exclude_methods = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PIZ_COMPRESSION']
-    df = df[~df['method'].isin(exclude_methods)]
+    # exclude_methods = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PIZ_COMPRESSION']
+    # df = df[~df['method'].isin(exclude_methods)]
 
     df['image_group'] = df['file'].map(image_mapping).fillna('Other')
 
@@ -287,6 +316,46 @@ def analyse(dir_path):
     print("Summary Statistics:")
     with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
         print(avg_stats.sort_values(['image_group', 'size_kb'], ascending=True))
+
+    # metrics = ['read_ms', 'write_ms', 'size_kb', 'cpu_ms']
+    # fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    # axes = axes.flatten()
+    #
+    # for i, metric in enumerate(metrics):
+    #     sns.violinplot(data=df, x='image_group', y=metric, hue='method',
+    #                    split=True, inner='quart', ax=axes[i])
+    #     axes[i].set_title(f'{metric.replace("_", " ").title()} by Image Group & Method')
+    #     axes[i].tick_params(axis='x', rotation=45)
+    #
+    # plt.tight_layout()
+    # plt.savefig('compression_violins.png', dpi=300, bbox_inches='tight')
+    # plt.show()
+
+    stat, p, pivot_size = friedman_test(df, metric='size_kb', cores=16)
+    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
+    mean_size_ranks = pivot_size.rank(axis=1, method='average').mean()
+
+
+    stat, p, pivot_read = friedman_test(df, metric='read_ms', cores=16)
+    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
+    mean_read_ranks = pivot_read.rank(axis=1, method='average').mean()
+
+    stat, p, write_write = friedman_test(df, metric='write_ms', cores=16)
+    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
+    mean_write_ranks = write_write.rank(axis=1, method='average').mean()
+
+    rank_table = pd.concat(
+        {
+            'size': mean_size_ranks,
+            'read': mean_read_ranks,
+            'write': mean_write_ranks,
+        },
+        axis=1
+    )
+    rank_table = rank_table.sort_values(by='size')
+    print(rank_table)
+
+    return
 
     unique_groups = avg_stats['image_group'].unique()
 
@@ -304,4 +373,4 @@ def analyse(dir_path):
 
 
 analyse(result_dir)
-print(analysed)
+# print(analysed)
