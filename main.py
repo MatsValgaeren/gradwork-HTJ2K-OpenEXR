@@ -1,5 +1,4 @@
 import os
-
 import json
 import time
 import datetime
@@ -16,8 +15,8 @@ import faulthandler
 faulthandler.enable()
 
 import recompress_oiio
+import roi_test
 
-os.environ['OPENEXR_NUM_THREADS'] = '0'
 
 compression_map = {
     'NO_COMPRESSION': 'none',
@@ -37,32 +36,39 @@ compression_map = {
 os.environ['OMP_NUM_THREADS'] = '1'
 
 image_dir = "./images"
-temp_dir = "./temp"
+temp_dir = r"E:\temp"
+# temp_dir = "./temp"
+temp = r'C:\Users\matsv\AppData\Local\Temp'
 results = []
-passes = 1
+passes = 2
 result_dir = "./results"
 pc_usage = {}
+
+
+def clean_system_cache():
+    # time.sleep(0.1)
+    pass
+
 
 def remove_files(dir):
     for root, dirs, files in os.walk(dir):
         for filename in files:
             file_path = os.path.join(root, filename)
             print('file', file_path)
-            # os.remove(file_path)
+            os.remove(file_path)
 
 @profile
-def go_over_files(num_cores, compression_method):
-    start = time.perf_counter()
+def go_over_files(num_cores, compression_method, input_dir):
     compression_name = compression_method.split("_")[0]
-    for root, dirs, files in os.walk(image_dir):
+    for root, dirs, files in os.walk(input_dir):
         for filename in files:
             old_file_path = os.path.join(root, filename)
+            print(old_file_path)
 
             if old_file_path.endswith(".exr"):
                 filename_parts = filename.split(".")
 
                 new_file_path = os.path.join(temp_dir, filename[:-6] + compression_name + '.exr')
-                print('new', new_file_path)
                 oiio_comp = compression_map.get(compression_method)
 
                 compression_res = recompress_oiio.recompress(old_file_path, new_file_path, comp=oiio_comp, passes=passes)
@@ -73,9 +79,10 @@ def go_over_files(num_cores, compression_method):
                 for _ in range(passes):
                     dst_copy = tempfile.NamedTemporaryFile(suffix=".exr", delete=False)
                     dst_copy.close()
-                    start = time.perf_counter()
-                    shutil.copyfile(new_file_path, dst_copy.name)
 
+                    start = time.perf_counter()
+
+                    shutil.copyfile(new_file_path, dst_copy.name)
                     with open(dst_copy.name, "rb+") as f:
                         f.flush()
                         try:
@@ -83,13 +90,19 @@ def go_over_files(num_cores, compression_method):
                         except OSError:
                             pass
                     res['copy'].append(time.perf_counter() - start)
+                    # os.remove(new_file_path)
 
+                for _ in range(passes):
+                    start = time.perf_counter()
+                    buf = oiio.ImageBuf(new_file_path)  # Metadata + header decode
+                    full_pixels = buf.get_pixels()
 
-                    s_read = time.perf_counter()
-                    oiio.ImageBuf(new_file_path)
-                    res['read'].append((time.perf_counter()  - s_read) * 1000)  # ms
-                    cpu_usage = psutil.cpu_percent()
-                    ram_usage = psutil.virtual_memory()
+                    res['read'].append((time.perf_counter() - start) * 1000)
+
+                cpu_usage = psutil.cpu_percent()
+                ram_usage = psutil.virtual_memory()
+
+                roi_res = test_roi(new_file_path, compression_method)
 
                 dur_read = np.mean(res['read'])
                 dur_copy = np.mean(res['copy'])
@@ -103,18 +116,38 @@ def go_over_files(num_cores, compression_method):
                                 "size_kb": compression_res['size_kb'],
                                 "cpu_ms": cpu_usage,
                                 "ram_usage": ram_usage[2],
-                                "copy": dur_copy})
+                                "copy": dur_copy,
+                                "ROI": roi_res}
+                               )
+
+
+
+ROIS = [
+    (0.0, 0.0, 1.0, 1.0),  # 100% full frame (baseline)
+    (0.1, 0.1, 0.4, 0.4),  # 25% center (Nuke viewport)
+    (0.4, 0.4, 0.6, 0.6),  # 4% center (extreme zoom)
+    (0.0, 0.0, 0.5, 0.5)  # 25% top-left quadrant
+]
+
+
+
+def test_roi(file, method):
+    clean_system_cache()
+    try:
+        return roi_test.benchmark_roi(file, ROIS)
+    except Exception as e:
+        print(f"✗ CRASH {file}: {e}")
+        return None
 
 def go_over_compression(num_threads):
     for compression in compression_map:
-        go_over_files(num_threads, compression)
-    # go_over_files('PIZ_COMPRESSION')
-
-    remove_files(temp_dir)
+        print(compression)
+        go_over_files(num_threads, compression, image_dir)
+        remove_files(temp_dir)
+        # remove_files(temp)
+        clean_system_cache()
 
     result_file = result_dir + '/file-data_' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + '.json'
-    # json.dump(results, result_file)
-
 
     with open(result_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=4)
@@ -123,5 +156,6 @@ def go_over_compression(num_threads):
 oiio.attribute("threads", 1)
 go_over_compression(num_threads = 1)
 
-oiio.attribute("threads", os.cpu_count())
-go_over_compression(num_threads = os.cpu_count())
+# oiio.attribute("threads", os.cpu_count())
+# go_over_compression(num_threads = os.cpu_count())
+

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from scipy.stats import friedmanchisquare
+
 result_dir = "./results"
 
 COMPRESSION_METHODS = [
@@ -126,81 +128,21 @@ image_mapping = {
     'v2/LowResLeftView/Ground': 'StereoLowRes',
     'v2/LowResLeftView/Leaves': 'StereoLowRes',
     'v2/LowResLeftView/Trunks': 'StereoLowRes',
-    'v2/LowResLeftView/composited': 'StereoLowRes'
+    'v2/LowResLeftView/composited': 'StereoLowRes',
+
+    'render_001.v001.1005': 'Blender',
+    'render_002.v001': 'Blender',
+    'render_003.v001': 'Blender'
 }
-
-analysed = {m: {"count": 0, "total_dur": 0, "total_read_duration": 0, "avg_read_duration": 0, "total_write_duration": 0, "avg_write_duration": 0, "total_wall_duration": 0, "avg_wall_duration": 0, "total_file_size": 0, "avg_file_size": 0, "max_cpu": 0, "max_ram": 0} for m in COMPRESSION_METHODS}
-
-def print_results():
-    for item in analysed:
-        analysed[item]["avg_read_duration"] = analysed[item]["total_read_duration"] / analysed[item]["count"] * 100
-        analysed[item]["avg_write_duration"] = analysed[item]["total_write_duration"] / analysed[item]["count"] * 100
-        analysed[item]["avg_file_size"] = analysed[item]["total_file_size"] / analysed[item]["count"] / 1024 / 1024
-        print(item, 'avg read time of', analysed[item]["avg_read_duration"], 'milliseconds')
-        print(item, 'avg compression time of', analysed[item]["avg_write_duration"], 'milliseconds')
-        print(item, 'avg file size of', analysed[item]["avg_file_size"], 'kb')
-        print(item, 'max cpu', analysed[item]["max_cpu"], 'milliseconds')
-
-def plot_results():
-    x = []
-    y = []
-    z = []
-    labels = []
-
-    font = {'color': 'black',
-            'weight': 'bold',
-            'size': 5
-            }
-
-    for comp in analysed:
-        x.append(analysed[comp]["avg_read_duration"])
-        z.append(analysed[comp]["avg_write_duration"])
-        y.append(analysed[comp]["total_file_size"])
-        labels.append(comp.replace('_COMPRESSION', ''))
-
-
-    x = np.array(x)
-    y = np.array(y)
-    z = np.array(z)
-
-    # Publication styling
-    plt.rcParams.update({'font.size': 10, 'savefig.dpi': 300})
-    plt.figure(figsize=(10, 8))
-
-    scatter = plt.scatter(x, y, s=100, alpha=0.7, c=z, edgecolors='black')
-
-    # Smart labels (avoid overlap)
-    for i, label in enumerate(labels):
-        plt.annotate(label, (x[i], y[i]), xytext=(1, 1), textcoords='offset points',
-                     fontsize=8, ha='left', fontweight='bold')
-
-    plt.xlabel('Write Time (ms)', fontsize=12, fontweight='bold')
-    plt.ylabel('File Size (KB)', fontsize=12, fontweight='bold')
-    plt.title('OpenEXR Compression: Write Time vs File Size', fontsize=14,
-              fontweight='bold')
-
-    plt.grid(True, alpha=0.3)
-    plt.colorbar(scatter, label='Read Time (ms)')
-
-    # plt.tight_layout()
-    # plt.savefig('exr_benchmark.pdf', bbox_inches='tight', dpi=300)  # Publication ready
-    plt.show()
 
 def plot_cores(avg_stats, stat):
     method_labels = avg_stats['method'].unique()
     # method_labels = COMPRESSION_METHODS
     core_labels = sorted(avg_stats['cores'].unique())
-
+    print('lebel', core_labels)
     cores_to_plot = [1, 16]
 
-    new_avg = avg_stats.groupby(['cores', 'method'], as_index=False).agg({
-        'read_ms': 'mean',
-        'write_ms': 'mean',
-        'size_kb': 'mean',
-        'cpu_ms': 'mean'
-    }).round(2)
-
-    pivot_data = new_avg.pivot(index='method', columns='cores', values=stat)
+    pivot_data = avg_stats.pivot(index='method', columns='cores', values=stat)
 
     x = range(len(pivot_data))
     width = 0.35
@@ -216,18 +158,14 @@ def plot_cores(avg_stats, stat):
 
     plt.title(stat + ' VS Cores')
 
-    # plt.xlabel('Number of Threads')
     plt.ylabel('Cores')
 
     ax.set_xticks(x)
     ax.set_xticklabels([m.split('_')[0] for m in method_labels], rotation=45)
-    print('show')
     plt.show()
 
-from scipy.stats import friedmanchisquare
-import scikit_posthocs as sp
 
-def plot_unique_groups(avg_stats, unique_groups):
+def plot_unique_groups(avg_stats, unique_groups, xs, ys):
     n_groups = len(unique_groups)
 
     fig, axes = plt.subplots(n_groups, 1, figsize=(12, 4 * n_groups))
@@ -239,20 +177,21 @@ def plot_unique_groups(avg_stats, unique_groups):
             ]
 
         colors = [METHOD_COLOR_MAP[method] for method in curr_df['method']]
-        axes[i].scatter(curr_df['read_ms'], curr_df['size_kb'],
+        axes[i].scatter(curr_df[xs], curr_df[ys],
                         c = colors,
                         alpha=0.8, edgecolors='black', linewidth=2,
                         s=100)
 
-        for j, row in avg_stats.iterrows():
-            axes[i].annotate(f"{(row['method'].split('_')[0])}",
-                            (row['read_ms'], row['size_kb']),
-                            xytext=(5, 5), textcoords='offset points',
-                            fontsize=6, fontweight='bold', ha='left')
+        for j, row in curr_df.iterrows():  # Only current group rows
+            method_short = row['method'].split('_')[0]
+            axes[i].annotate(method_short,
+                             (row[xs], row[ys]),
+                             xytext=(5, 5), textcoords='offset points',
+                             fontsize=7, fontweight='bold', ha='left')
 
-        axes[i].set_xlabel('Read Time (ms)')
-        axes[i].set_ylabel('Size (KB)')
-        axes[i].set_title(f'{img_group} - Read Time vs Size')
+        axes[i].set_xlabel(xs)
+        axes[i].set_ylabel(ys)
+        axes[i].set_title(f'{img_group} - {xs} vs {ys}')
 
     plt.tight_layout()
     plt.show()
@@ -270,23 +209,42 @@ def friedman_test(df, metric, cores, machine=None):
         .reset_index()
     )
 
-    # Pivot to image × method
     pivot = sub.pivot(index='file', columns='method', values=metric)
-
-    # Drop images missing any method
     pivot = pivot.dropna()
 
     print(f"Images used: {pivot.shape[0]}")
     print(f"Methods: {pivot.shape[1]}")
 
+    if pivot.shape[1] < 3:
+        return 0, 1.0, pivot
     # Friedman test
     stat, p = friedmanchisquare(*[pivot[col] for col in pivot.columns])
 
     return stat, p, pivot
 
-def analyse(dir_path):
-    plt.style.use('seaborn-v0_8-paper')
+def friedman_analysis(df, metrics, cores, machine=None):
+    pivots = {}
+    mean_ranks = {}
 
+    for metric in metrics:
+        stat, p, pivot = friedman_test(df, metric=metric, cores=cores, machine=machine)
+        print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
+        mean_ranks[metric] = pivot.rank(axis=1, method='average').mean()
+        pivots[metric] = pivot
+
+    rank_table = pd.concat(mean_ranks, axis=1)
+
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    pd.set_option('display.expand_frame_repr', False)
+
+    print("\nRank Table (lower = better):")
+    print(rank_table)
+
+    return rank_table, pivots
+
+def load_data(dir_path):
     all_data = []
 
     for root, dirs, files in os.walk(dir_path):
@@ -301,76 +259,89 @@ def analyse(dir_path):
 
     df = pd.concat(all_data, ignore_index=True)
 
-    # exclude_methods = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PIZ_COMPRESSION']
+    return df
+
+def analyse(dir_path):
+    plt.style.use('seaborn-v0_8-paper')
+    df = load_data(dir_path)
+
+    # exclude_methods = ['NO_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PXR24_COMPRESSION', 'RLE_COMPRESSION']
     # df = df[~df['method'].isin(exclude_methods)]
 
     df['image_group'] = df['file'].map(image_mapping).fillna('Other')
 
+    # "ROI": {
+    #     "ROI_0%-100%": 4.87,
+    #     "ROI_10%-40%": 0.9,
+    #     "ROI_40%-60%": 0.16,
+    #     "ROI_0%-50%": 1.38
+    # }
+
+    df['ROI_full'] = df['ROI'].apply(lambda x: x.get('ROI_0%-100%', 0))
+    df['ROI_tiny'] = df['ROI'].apply(lambda x: x.get('ROI_10%-40%', 0))
+    df['ROI_small'] = df['ROI'].apply(lambda x: x.get('ROI_40%-60%', 0))
+    df['ROI_half'] = df['ROI'].apply(lambda x: x.get('ROI_0%-50%', 0))
+
     avg_stats = df.groupby(['cores', 'method', 'image_group'], as_index=False).agg({
+        'read_ms': 'mean', 'write_ms': 'mean', 'size_kb': 'mean',
+        'cpu_ms': 'mean', 'ram_usage': 'mean',
+        'ROI_full': 'mean',
+        'ROI_half': 'mean',
+        'ROI_small': 'mean',
+        'ROI_tiny': 'mean'
+    }).round(2)
+
+
+    # print("Summary Statistics:")
+    # with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
+    #     print(avg_stats.sort_values(['image_group', 'size_kb'], ascending=True))
+
+    priority_groups = [
+        'Chromaticities',
+        'LuminanceChroma',
+        'Scanline',
+        'Tiled',
+        'MultiResolution',
+        'Other',
+        'Blender'
+    ]
+
+    df_priority = df[df['image_group'].isin(priority_groups)].copy()
+
+    # def friedman_analysis(df, metrics, cores, machine=None):
+    friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage', 'ROI_full', 'ROI_half', 'ROI_small', 'ROI_tiny'], 1)
+    # friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage'], 16)
+
+    unique_groups = avg_stats['image_group'].unique()
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ROI_full', 'size_kb')
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'read_ms', 'size_kb')
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'write_ms', 'size_kb')
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ram_usage', 'size_kb')
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'read_ms', 'size_kb')
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'write_ms', 'size_kb')
+
+    new_avg = avg_stats.groupby(['cores', 'method'], as_index=False).agg({
         'read_ms': 'mean',
         'write_ms': 'mean',
         'size_kb': 'mean',
-        'cpu_ms': 'mean'
+        'cpu_ms': 'mean',
+        'ram_usage': 'mean',
+        'ROI_full': 'mean',
+        'ROI_half': 'mean',
+        'ROI_small': 'mean',
+        'ROI_tiny': 'mean'
     }).round(2)
 
-    print("Summary Statistics:")
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
-        print(avg_stats.sort_values(['image_group', 'size_kb'], ascending=True))
-
-    # metrics = ['read_ms', 'write_ms', 'size_kb', 'cpu_ms']
-    # fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    # axes = axes.flatten()
-    #
-    # for i, metric in enumerate(metrics):
-    #     sns.violinplot(data=df, x='image_group', y=metric, hue='method',
-    #                    split=True, inner='quart', ax=axes[i])
-    #     axes[i].set_title(f'{metric.replace("_", " ").title()} by Image Group & Method')
-    #     axes[i].tick_params(axis='x', rotation=45)
-    #
-    # plt.tight_layout()
-    # plt.savefig('compression_violins.png', dpi=300, bbox_inches='tight')
-    # plt.show()
-
-    stat, p, pivot_size = friedman_test(df, metric='size_kb', cores=16)
-    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
-    mean_size_ranks = pivot_size.rank(axis=1, method='average').mean()
+    # plot_cores(new_avg, 'read_ms')
+    # plot_cores(new_avg, 'ROI_full')
+    # plot_cores(new_avg, 'ROI_tiny')
+    # plot_cores(new_avg, 'write_ms')
+    # plot_cores(new_avg, 'ram_usage')
+    # plot_cores(new_avg, 'size_kb')
 
 
-    stat, p, pivot_read = friedman_test(df, metric='read_ms', cores=16)
-    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
-    mean_read_ranks = pivot_read.rank(axis=1, method='average').mean()
+import glob
 
-    stat, p, write_write = friedman_test(df, metric='write_ms', cores=16)
-    print(f"Friedman χ² = {stat:.3f}, p = {p:.3e}")
-    mean_write_ranks = write_write.rank(axis=1, method='average').mean()
+latest_results = max(glob.glob(result_dir), key=os.path.getctime)
 
-    rank_table = pd.concat(
-        {
-            'size': mean_size_ranks,
-            'read': mean_read_ranks,
-            'write': mean_write_ranks,
-        },
-        axis=1
-    )
-    rank_table = rank_table.sort_values(by='size')
-    print(rank_table)
-
-    return
-
-    unique_groups = avg_stats['image_group'].unique()
-
-    plt.rcParams.update({'font.size': 12, 'savefig.dpi': 300})
-
-
-
-    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups)
-    plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups)
-    plot_cores(avg_stats, 'read_ms')
-    plot_cores(avg_stats, 'write_ms')
-    plot_cores(avg_stats, 'size_kb')
-
-
-
-
-analyse(result_dir)
-# print(analysed)
+analyse(latest_results)
