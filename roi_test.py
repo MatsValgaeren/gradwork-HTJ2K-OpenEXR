@@ -6,95 +6,39 @@ import OpenImageIO as oiio
 import time
 import numpy as np
 import subprocess
+img = r'C:\Users\matsv\Desktop\gw\scripts\images'
+in_image_dir = "./../source"
 
-def _has_multiple_subimages_or_views(path):
-    inp = None
-    try:
-        inp = oiio.ImageInput.open(path)
-        if not inp:
-            return False
-
-        nsub = None
-        if hasattr(inp, "nsubimages"):
-            try:
-                nsub = inp.nsubimages()
-            except Exception:
-                nsub = None
-
-        if nsub is None:
-            nsub = 0
-            while True:
-                try:
-                    ok = False
-                    try:
-                        ok = inp.seek_subimage(nsub, 0)
-                    except TypeError:
-                        ok = inp.seek_subimage(nsub)
-                except Exception:
-                    ok = False
-                if not ok:
-                    break
-                nsub += 1
-
-        views_present = False
-        try:
-            try:
-                inp.seek_subimage(0, 0)
-            except TypeError:
-                inp.seek_subimage(0)
-            spec0 = inp.spec()
-            for key in ("oiio:views", "views", "view", "multiView"):
-                try:
-                    if hasattr(spec0, "get_string_attribute"):
-                        val = spec0.get_string_attribute(key)
-                    else:
-                        val = spec0.get_string_attribute(key) if hasattr(spec0, "get_string_attribute") else None
-                    if val:
-                        views_present = True
-                        break
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        inp.close()
-        inp = None
-
-        return (nsub > 1) or views_present
-
-    except Exception:
-        try:
-            if inp:
-                inp.close()
-        except Exception:
-            pass
-        return False
-
-
-def benchmark_roi(image_path, roi_fractions, n_runs=1):
+def test(image_path):
     results = {}
-    if _has_multiple_subimages_or_views(image_path):
-        print(f"Skipping multi-subimage / multi-view file: {image_path}")
-        return results
-
     buf = oiio.ImageBuf(image_path)
 
 
     spec = buf.spec()  # Copy spec
     width, height = spec.width, spec.height
 
-    try:
-        full_pixels = buf.get_pixels()
-    except Exception as e:
-        print(f"Error reading full pixels from {image_path}: {e}")
-        return results
+    # SHOW THREADING INFO
+    if spec.tile_width > 0:
+        print(image_path)
+        print(f"Image: {image_path}")
+        print(f"  Size: {spec.width}x{spec.height}")
+        print(f"  Tiled: {spec.tile_width > 0}, Tile size: {spec.tile_width}x{spec.tile_height}")
+        print(f"  Channels: {spec.nchannels}")
+        print(f"  Format: {spec.format}")
+
+    return
+
+def benchmark_roi(image_path, roi_fractions):
+    results = {}
 
     for xfrac1, yfrac1, xfrac2, yfrac2 in roi_fractions:
+        x1, x2 = int(xfrac1 * 100), int(xfrac2 * 100)
+        key = f'ROI_{x1}%-{x2}%'
+
         try:
-            # COLD: Fresh ImageBuf EVERY ROI (matches read_ms exactly)
             start = time.perf_counter()
 
-            buf = oiio.ImageBuf(image_path)  # Fresh file open + decode
+            buf = oiio.ImageBuf(image_path)  # cold open + decode for each ROI
             if buf.has_error:
                 continue
 
@@ -107,17 +51,24 @@ def benchmark_roi(image_path, roi_fractions, n_runs=1):
                 continue
 
             roi = oiio.ROI(xbegin, xend, ybegin, yend)
-            pixels = buf.get_pixels(roi=roi)
-            end = time.perf_counter()
+            _ = buf.get_pixels(roi=roi)
 
-            results[f'ROI_{int(xfrac1 * 100)}%-{int(xfrac2 * 100)}%'] = round((end - start) * 1000, 2)
+            end = time.perf_counter()
+            results[key] = round((end - start) * 1000, 2)
 
         except Exception:
             continue
 
-    try:
-        del buf
-    except Exception:
-        pass
-
     return results
+
+# for root, dirs, files in os.walk(in_image_dir):
+#     for filename in files:
+#         if filename.endswith(".exr"):
+#             file_path = os.path.join(root, filename)
+#             test(file_path)
+#
+# for root, dirs, files in os.walk(img):
+#     for filename in files:
+#         if filename.endswith(".exr"):
+#             file_path = os.path.join(root, filename)
+#             test(file_path)

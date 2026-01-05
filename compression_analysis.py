@@ -9,6 +9,7 @@ import seaborn as sns
 from scipy.stats import friedmanchisquare
 
 result_dir = "./results"
+graphs_dir = "./graphs"
 
 COMPRESSION_METHODS = [
     "NO_COMPRESSION",
@@ -135,11 +136,12 @@ image_mapping = {
     'render_003.v001': 'Blender'
 }
 
-def plot_cores(avg_stats, stat):
+def plot_cores(avg_stats, stat, save=False):
+
     method_labels = avg_stats['method'].unique()
     # method_labels = COMPRESSION_METHODS
     core_labels = sorted(avg_stats['cores'].unique())
-    print('lebel', core_labels)
+
     cores_to_plot = [1, 16]
 
     pivot_data = avg_stats.pivot(index='method', columns='cores', values=stat)
@@ -162,10 +164,15 @@ def plot_cores(avg_stats, stat):
 
     ax.set_xticks(x)
     ax.set_xticklabels([m.split('_')[0] for m in method_labels], rotation=45)
+
+    if save:
+        file_name = os.path.join(graphs_dir, f'{stat}_vs_cores.png')
+        plt.savefig(file_name)
+
     plt.show()
 
 
-def plot_unique_groups(avg_stats, unique_groups, xs, ys):
+def plot_unique_groups(avg_stats, unique_groups, xs, ys, save=False):
     n_groups = len(unique_groups)
 
     fig, axes = plt.subplots(n_groups, 1, figsize=(12, 4 * n_groups))
@@ -194,6 +201,11 @@ def plot_unique_groups(avg_stats, unique_groups, xs, ys):
         axes[i].set_title(f'{img_group} - {xs} vs {ys}')
 
     plt.tight_layout()
+
+    if save:
+        file_name = os.path.join(graphs_dir, f'image_{xs}_vs_{xs}.png')
+        plt.savefig(file_name)
+
     plt.show()
 
 def friedman_test(df, metric, cores, machine=None):
@@ -264,32 +276,26 @@ def load_data(dir_path):
 def analyse(dir_path):
     plt.style.use('seaborn-v0_8-paper')
     df = load_data(dir_path)
+    print('loaded')
 
+    exclude_methods = ['NO_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'RLE_COMPRESSION']
     # exclude_methods = ['NO_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PXR24_COMPRESSION', 'RLE_COMPRESSION']
     # df = df[~df['method'].isin(exclude_methods)]
 
     df['image_group'] = df['file'].map(image_mapping).fillna('Other')
 
-    # "ROI": {
-    #     "ROI_0%-100%": 4.87,
-    #     "ROI_10%-40%": 0.9,
-    #     "ROI_40%-60%": 0.16,
-    #     "ROI_0%-50%": 1.38
-    # }
+    roi_columns = pd.json_normalize(df['roi_decode_ms']).columns.tolist()
+    df_roi = df[['cores', 'method', 'image_group'] +
+                ['read_ms', 'write_ms', 'size_kb', 'cpu_ms', 'ram_usage']].copy()
+    df_roi[roi_columns] = pd.json_normalize(df['roi_decode_ms'])
 
-    df['ROI_full'] = df['ROI'].apply(lambda x: x.get('ROI_0%-100%', 0))
-    df['ROI_tiny'] = df['ROI'].apply(lambda x: x.get('ROI_10%-40%', 0))
-    df['ROI_small'] = df['ROI'].apply(lambda x: x.get('ROI_40%-60%', 0))
-    df['ROI_half'] = df['ROI'].apply(lambda x: x.get('ROI_0%-50%', 0))
-
-    avg_stats = df.groupby(['cores', 'method', 'image_group'], as_index=False).agg({
+    agg_dict = {
         'read_ms': 'mean', 'write_ms': 'mean', 'size_kb': 'mean',
-        'cpu_ms': 'mean', 'ram_usage': 'mean',
-        'ROI_full': 'mean',
-        'ROI_half': 'mean',
-        'ROI_small': 'mean',
-        'ROI_tiny': 'mean'
-    }).round(2)
+        'cpu_ms': 'mean', 'ram_usage': 'mean'
+    }
+    agg_dict.update({col: 'mean' for col in roi_columns})  # Add all ROI keys dynamically
+
+    avg_stats = df_roi.groupby(['cores', 'method', 'image_group'], as_index=False).agg(agg_dict).round(2)
 
 
     # print("Summary Statistics:")
@@ -306,38 +312,43 @@ def analyse(dir_path):
         'Blender'
     ]
 
-    df_priority = df[df['image_group'].isin(priority_groups)].copy()
+    # scanline_roi = avg_stats[avg_stats['image_group'] == 'Scanline']['ROI_40%-60%'].mean()
+    # tiled_roi = avg_stats[avg_stats['image_group'] == 'Tiled']['ROI_40%-60%'].mean()
+    # print(f"Scanline tiny ROI: {scanline_roi:.2f}, Tiled: {tiled_roi:.2f}")
 
+
+    df_priority = df[df['image_group'].isin(priority_groups)].copy()
+    df_priority[roi_columns] = pd.json_normalize(df_priority['roi_decode_ms'])
+
+    # avg_stats = avg_stats[avg_stats['image_group'].isin(['Scanline', 'Tiled'])]
     # def friedman_analysis(df, metrics, cores, machine=None):
-    friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage', 'ROI_full', 'ROI_half', 'ROI_small', 'ROI_tiny'], 1)
-    # friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage'], 16)
+    friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage'], 1)
+    friedman_analysis(df_priority, roi_columns, 1)
 
     unique_groups = avg_stats['image_group'].unique()
-    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ROI_full', 'size_kb')
-    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'read_ms', 'size_kb')
-    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'write_ms', 'size_kb')
-    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ram_usage', 'size_kb')
-    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'read_ms', 'size_kb')
-    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'write_ms', 'size_kb')
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ROI_full', 'size_kb', False)
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'read_ms', 'size_kb', True)
+    plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'write_ms', 'size_kb', True)
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ram_usage', 'size_kb', False)
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'read_ms', 'size_kb', False)
+    # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'write_ms', 'size_kb', False)
+
+    avg_stats = df_roi.groupby(['cores', 'method', 'image_group'], as_index=False).agg(agg_dict).round(2)
 
     new_avg = avg_stats.groupby(['cores', 'method'], as_index=False).agg({
         'read_ms': 'mean',
         'write_ms': 'mean',
         'size_kb': 'mean',
-        'cpu_ms': 'mean',
         'ram_usage': 'mean',
-        'ROI_full': 'mean',
-        'ROI_half': 'mean',
-        'ROI_small': 'mean',
-        'ROI_tiny': 'mean'
+        'cpu_ms': 'mean'
     }).round(2)
 
-    # plot_cores(new_avg, 'read_ms')
-    # plot_cores(new_avg, 'ROI_full')
-    # plot_cores(new_avg, 'ROI_tiny')
-    # plot_cores(new_avg, 'write_ms')
-    # plot_cores(new_avg, 'ram_usage')
-    # plot_cores(new_avg, 'size_kb')
+    plot_cores(new_avg, 'read_ms', True)
+    # plot_cores(new_avg, 'ROI_full', True)
+    # plot_cores(new_avg, 'ROI_tiny', True)
+    plot_cores(new_avg, 'write_ms', True)
+    plot_cores(new_avg, 'ram_usage', True)
+    plot_cores(new_avg, 'size_kb', True)
 
 
 import glob

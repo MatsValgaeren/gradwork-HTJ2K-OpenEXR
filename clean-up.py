@@ -1,5 +1,4 @@
 import os
-
 import recompress_oiio
 
 in_image_dir = "./../source"
@@ -18,12 +17,12 @@ def clean(in_dir, out_dir):
 
                 old_file_path = os.path.join(root, filename)
                 new_file_path = os.path.join(folder_path, filename[:-4] + "_NO" + ".exr")
-                print(new_file_path)
+                # print(new_file_path)
                 try:
                     recompress_oiio.recompress(old_file_path, new_file_path, comp='none', num_threads=1, passes=1)
                 except Exception as e:
                     print('skipping file: ', e)
 
-# clean(in_image_dir, out_image_dir)
+clean(in_image_dir, out_image_dir)
 # clean(render_img_dir, out_image_dir)
 clean(nuke_img_dir, out_image_dir)
