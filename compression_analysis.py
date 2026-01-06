@@ -234,7 +234,7 @@ def friedman_test(df, metric, cores, machine=None):
 
     return stat, p, pivot
 
-def friedman_analysis(df, metrics, cores, machine=None):
+def friedman_analysis(df, metrics, cores=1, machine=None):
     pivots = {}
     mean_ranks = {}
 
@@ -261,47 +261,121 @@ def load_data(dir_path):
 
     for root, dirs, files in os.walk(dir_path):
         for filename in files:
-            if filename.endswith('.json'):
-                file_path = os.path.join(root, filename)
-                try:
-                    df = pd.read_json(file_path)
-                    all_data.append(df)
-                except Exception as e:
-                    print(f"Error reading {file_path}: {e}")
+            if not filename.endswith('.json'):
+                continue
 
-    df = pd.concat(all_data, ignore_index=True)
+            file_path = os.path.join(root, filename)
 
-    return df
+            try:
+                with open(file_path) as f:
+                    raw = json.load(f)  # List[dict]
 
-def analyse(dir_path):
+                for record in raw:
+                    row = {
+                        'cores': record.get('cores'),
+                        'method': record.get('method'),
+                        'file': record.get('file'),
+                        # group by base image name
+                        'image_group': record.get('file', '').split('.')[0]
+                    }
+
+                    # ---- SCAN ----
+                    for k, v in record.get('scan', {}).items():
+                        if isinstance(v, dict):
+                            for rk, rv in v.items():
+                                row[f'scan.{k}.{rk}'] = rv
+                        else:
+                            row[f'scan.{k}'] = v
+
+                    # ---- TILED ----
+                    for k, v in record.get('tiled', {}).items():
+                        if isinstance(v, dict):
+                            for rk, rv in v.items():
+                                row[f'tiled.{k}.{rk}'] = rv
+                        else:
+                            row[f'tiled.{k}'] = v
+
+                    all_data.append(row)
+
+            except Exception as e:
+                print(f"Error reading {file_path}: {e}")
+
+    return pd.DataFrame(all_data)
+
+def roi_full_table(df):
+    scan_roi = sorted([c for c in df if 'scan.roi_decode_ms.ROI_' in c])
+    tile_roi = sorted([c for c in df if 'tiled.roi_decode_ms.ROI_' in c])
+
+    print(f"📊 {len(scan_roi)} ROIs × 12 codecs")
+    roi_means = df[['method'] + scan_roi + tile_roi].groupby('method').mean()
+
+    # PRINT ALL COLUMNS
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    print(roi_means.round(1))
+    pd.reset_option('display.max_columns')
+
+    # SPEEDUP SUMMARY
+    print("\n⚡ Layout speedup (scan→tiled avg):")
+    for roi in scan_roi[:6]:
+        s, t = roi_means[roi].mean(), roi_means[roi.replace('scan', 'tiled')].mean()
+        print(f"{roi.split('_')[-1]:12} {s:6.1f}ms → {t:6.1f}ms ({s / t:.1f}x)")
+
+
+def analyse(dir):
     plt.style.use('seaborn-v0_8-paper')
-    df = load_data(dir_path)
-    print('loaded')
+    df = load_data(dir)
+
+    scan_cols = [col for col in df.columns if col.startswith('scan.') and col != 'scan.roi_decode_ms']
+    tile_cols = [col for col in df.columns if col.startswith('tiled.') and col != 'tiled.roi_decode_ms']
+
+    agg_dict = dict.fromkeys(scan_cols + tile_cols, 'mean')
+
+    avg_stats = df.groupby(['cores', 'method', 'image_group']).agg(agg_dict).round(2).reset_index()
+
+    safe_metrics = ['read_ms', 'write_ms', 'size_kb'] if 'scan.read_ms' in avg_stats else []
+    for m in safe_metrics:
+        plot_cores(avg_stats, f'scan.{m}', True)
+        plot_cores(avg_stats, f'tiled.{m}', True)
+
+    # ROI SPEEDUP (handles your 0.4x)
+    if 'scan.roi_decode_ms.ROI_45%-55%' in df.columns:
+        speedup = df['scan.roi_decode_ms.ROI_45%-55%'].mean() / df['tiled.roi_decode_ms.ROI_45%-55%'].mean()
+        print(f"Tiny ROI speedup (scan/tiled): {speedup:.1f}x")
+
+    roi_full_table(df)
+
+    metrics = ['size_kb', 'read_ms', 'write_ms', 'ram_usage']
+
+    # ROI COLUMNS (flattened)
+    roi_cols = [col for col in df.columns if col.endswith('_decode_ms.ROI_')]
+    core_metrics = ['read_ms', 'write_ms', 'size_kb', 'cpu_ms', 'ram_usage']
 
     exclude_methods = ['NO_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'RLE_COMPRESSION']
     # exclude_methods = ['NO_COMPRESSION', 'DWAA_COMPRESSION', 'DWAB_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', 'PXR24_COMPRESSION', 'RLE_COMPRESSION']
     # df = df[~df['method'].isin(exclude_methods)]
 
-    df['image_group'] = df['file'].map(image_mapping).fillna('Other')
-
-    roi_columns = pd.json_normalize(df['roi_decode_ms']).columns.tolist()
-    df_roi = df[['cores', 'method', 'image_group'] +
-                ['read_ms', 'write_ms', 'size_kb', 'cpu_ms', 'ram_usage']].copy()
-    df_roi[roi_columns] = pd.json_normalize(df['roi_decode_ms'])
-
-    agg_dict = {
-        'read_ms': 'mean', 'write_ms': 'mean', 'size_kb': 'mean',
-        'cpu_ms': 'mean', 'ram_usage': 'mean'
-    }
-    agg_dict.update({col: 'mean' for col in roi_columns})  # Add all ROI keys dynamically
-
-    avg_stats = df_roi.groupby(['cores', 'method', 'image_group'], as_index=False).agg(agg_dict).round(2)
 
 
-    # print("Summary Statistics:")
-    # with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None):
-    #     print(avg_stats.sort_values(['image_group', 'size_kb'], ascending=True))
+    # FRIEDMAN SCAN vs TILE SEPARATE
+    print("\n=== SCANLINE ===")
+    scan_metrics = [f"scan.{m}" for m in core_metrics]
+    friedman_analysis(df, scan_metrics, cores=1)
 
+    print("\n=== TILED ===")
+    tile_metrics = [f"tiled.{m}" for m in core_metrics]
+    friedman_analysis(df, tile_metrics, cores=1)
+    #
+    # key_rois = ['ROI_0%-100%', 'ROI_45%-55%']  # Full + tiny
+    # print("\n=== SCAN ROI ===")
+    # friedman_analysis(df, [f"scan.roi_decode_ms.{r}" for r in key_rois], 1)
+    # print("\n=== TILED ROI ===")
+    # friedman_analysis(df, [f"tiled.roi_decode_ms.{r}" for r in key_rois], 1)
+
+
+
+
+    # PRIORITY GROUPS
     priority_groups = [
         'Chromaticities',
         'LuminanceChroma',
@@ -312,18 +386,37 @@ def analyse(dir_path):
         'Blender'
     ]
 
-    # scanline_roi = avg_stats[avg_stats['image_group'] == 'Scanline']['ROI_40%-60%'].mean()
-    # tiled_roi = avg_stats[avg_stats['image_group'] == 'Tiled']['ROI_40%-60%'].mean()
-    # print(f"Scanline tiny ROI: {scanline_roi:.2f}, Tiled: {tiled_roi:.2f}")
-
-
     df_priority = df[df['image_group'].isin(priority_groups)].copy()
-    df_priority[roi_columns] = pd.json_normalize(df_priority['roi_decode_ms'])
+
+    # AGGREGATE (drop broken df_roi)
+    agg_dict = {f"{l}.{m}": 'mean' for l in ['scan', 'tiled'] for m in core_metrics}
+    agg_dict.update({col: 'mean' for col in roi_cols[:4]})  # Top ROIs
+
+    # unique_groups = avg_stats['image_group'].unique()
+    # if len(unique_groups) > 0:
+    #     plot_unique_groups(avg_stats[avg_stats.cores == 1], unique_groups,
+    #                        'scan.read_ms', 'scan.size_kb', True)
+    # else:
+    #     print("No image_groups for plots")
+
+    # Layout speedup
+    df['roi_speedup'] = df['scan.roi_decode_ms.ROI_45%-55%'] / df['tiled.roi_decode_ms.ROI_45%-55%']
+    print(f"Tiled ROI speedup (tiny): {df['roi_speedup'].mean():.1f}x")
+
+    # plot_cores(avg_stats, 'scan.read_ms', False)
+    # print('ewf')
+    # plot_cores(avg_stats, 'scan.write_ms', False)
+    # print('ewf')
+    # plot_cores(avg_stats, 'scan.ram_usage', False)
+    # plot_cores(avg_stats, 'scan.size_kb', False)
+
+    return
+
 
     # avg_stats = avg_stats[avg_stats['image_group'].isin(['Scanline', 'Tiled'])]
     # def friedman_analysis(df, metrics, cores, machine=None):
-    friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage'], 1)
-    friedman_analysis(df_priority, roi_columns, 1)
+    # friedman_analysis(df_priority, ['size_kb', 'read_ms', 'write_ms', 'ram_usage'], 1)
+    # friedman_analysis(df_priority, roi_columns, 1)
 
     unique_groups = avg_stats['image_group'].unique()
     # plot_unique_groups(avg_stats[avg_stats['cores'] == 1], unique_groups, 'ROI_full', 'size_kb', False)
@@ -333,26 +426,4 @@ def analyse(dir_path):
     # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'read_ms', 'size_kb', False)
     # plot_unique_groups(avg_stats[avg_stats['cores'] == 16], unique_groups, 'write_ms', 'size_kb', False)
 
-    avg_stats = df_roi.groupby(['cores', 'method', 'image_group'], as_index=False).agg(agg_dict).round(2)
-
-    new_avg = avg_stats.groupby(['cores', 'method'], as_index=False).agg({
-        'read_ms': 'mean',
-        'write_ms': 'mean',
-        'size_kb': 'mean',
-        'ram_usage': 'mean',
-        'cpu_ms': 'mean'
-    }).round(2)
-
-    plot_cores(new_avg, 'read_ms', True)
-    # plot_cores(new_avg, 'ROI_full', True)
-    # plot_cores(new_avg, 'ROI_tiny', True)
-    plot_cores(new_avg, 'write_ms', True)
-    plot_cores(new_avg, 'ram_usage', True)
-    plot_cores(new_avg, 'size_kb', True)
-
-
-import glob
-
-latest_results = max(glob.glob(result_dir), key=os.path.getctime)
-
-analyse(latest_results)
+analyse(result_dir)

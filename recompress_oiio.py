@@ -20,7 +20,7 @@ def test(image_path):
     # SHOW THREADING INFO
     return spec.tile_width
 
-def recompress(in_path, out_path, comp='none', num_threads=1, passes=1):
+def recompress(in_path, out_path, comp='none', scanline=True, passes=1):
     process = psutil.Process()
     start_cpu = process.cpu_times()
     write_times = []
@@ -31,16 +31,21 @@ def recompress(in_path, out_path, comp='none', num_threads=1, passes=1):
     # print(n_sub)
 
     for _ in range(passes):
-        s_write = time.perf_counter()
-
         output_buf = buf.copy()
 
         spec = output_buf.spec().copy()
         spec.attribute("compression", comp)
 
-        spec.tile_width = buf.spec().tile_width
-        spec.tile_height = buf.spec().tile_height
-        spec.tile_depth = buf.spec().tile_depth
+        if scanline:
+            spec.tile_width = 0
+            spec.tile_height = 0
+            spec.tile_depth = 0
+        else:
+            spec.tile_width = 64
+            spec.tile_height = 64
+            spec.tile_depth = 1
+
+        s_write = time.perf_counter()
 
         out = oiio.ImageOutput.create(out_path)
         if not out:
@@ -58,8 +63,8 @@ def recompress(in_path, out_path, comp='none', num_threads=1, passes=1):
         if os.path.exists(out_path):
             write_times.append((e_write - s_write) * 1000)
 
-        if test(in_path) != test(out_path):
-            print('tiles not the same')
+        # if test(in_path) != test(out_path):
+        #     print('tiles not the same')
     end_cpu = process.cpu_times()
     cpu_ms = ((end_cpu.user + end_cpu.system) - (start_cpu.user + start_cpu.system)) / passes * 1000
 
