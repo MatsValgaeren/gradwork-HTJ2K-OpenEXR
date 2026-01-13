@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from nooverlap import push_text_free
+from adjustText import adjust_text
+from pandas.io.sas.sas_constants import text_block_size_length
+from matplotlib.ticker import MultipleLocator
 
 from scipy.stats import friedmanchisquare
 
@@ -17,20 +21,31 @@ COMPRESSION_METHODS = [
     "ZIPS_COMPRESSION",
     "ZIP_COMPRESSION",
     "PIZ_COMPRESSION",
+    "HTJ2K32_COMPRESSION",
+    "HTJ2K256_COMPRESSION",
     "PXR24_COMPRESSION",
     "B44_COMPRESSION",
     "B44A_COMPRESSION",
     "DWAA_COMPRESSION",
-    "DWAB_COMPRESSION",
-    "HTJ2K256_COMPRESSION",
-    "HTJ2K32_COMPRESSION"
+    "DWAB_COMPRESSION"
 ]
 
-colors = sns.color_palette("husl", 12)
+colors = [
+    '#e41a1c',  # NO      navy
+    '#377eb8',  # RLE     orange
+    '#4daf4a',  # ZIPS    green
+    '#8ECF8C',  # ZIP   green
+    '#984ea3',  # PIZ     purple
+    '#ff7f00',  # HT32   teal ★ (darker)
+    '#FFAD5C', # HT256
+    '#ffff33',  # PXR24   brown
+    '#a65628',  # B44     pink
+    '#D68557',  # B44A    gray
+    '#f781bf',  # DWAA    olive
+    '#FDE7F3'  # DWAB    cyan
+]
 
-METHOD_COLOR_MAP = {}
-for i, method in enumerate(COMPRESSION_METHODS):
-    METHOD_COLOR_MAP[method] = colors[i]
+METHOD_COLOR_MAP = {method: colors[i] for i, method in enumerate(COMPRESSION_METHODS)}
 
 
 def friedman_analysis(df, metrics, cores=1, exclude_methods=None):
@@ -96,6 +111,9 @@ def load_data(dir_path):
                         'num_aovs': record.get('num_aovs'),
                     }
 
+                    # maybe del
+                    row['cores'] = float(row['cores']) if row['cores'] is not None else np.nan
+
                     for k, v in record.get('scan', {}).items():
                         if isinstance(v, dict):
                             for rk, rv in v.items():
@@ -118,28 +136,30 @@ def load_data(dir_path):
     return pd.DataFrame(all_data)
 
 
-def query_stats(df, layout='scan', cores='all', groups='all', metrics=['read_ms', 'write_ms', 'size_kb'], exclude_methods=[]):
+def query_stats(df, layout='scan', cores='all', groups='all', metrics=['read_ms', 'write_ms', 'size_kb'], exclude_methods=[], aggregate=True):
     df_filtered = df.copy()
 
     if exclude_methods:
-        df_filtered = df_filtered[~df['method'].isin(exclude_methods)]
+        df_filtered = df_filtered[~df_filtered['method'].isin(exclude_methods)]
 
-    # cores
     if cores != 'all':
         df_filtered = df_filtered[df_filtered['cores'].isin(cores if isinstance(cores, list) else [cores])]
 
-    # groups
     if groups != 'all':
         df_filtered = df_filtered[df_filtered['group'].isin(groups if isinstance(groups, list) else [groups])]
 
-    # cols
     cols_to_agg = [f'{layout}.{m}' for m in metrics if f'{layout}.{m}' in df_filtered.columns]
 
     if not cols_to_agg:
         print(f"No columns for {layout}.{metrics}")
         return pd.DataFrame()
 
-    return df_filtered.groupby(['cores', 'method'])[cols_to_agg].mean().round(2).reset_index()
+    if aggregate:
+        # For plotting: group by cores & method, take mean
+        return df_filtered.groupby(['cores', 'method'])[cols_to_agg].mean().round(2).reset_index()
+    else:
+        # For Friedman: keep file-level data
+        return df_filtered[['file', 'cores', 'method'] + cols_to_agg].copy()
 
 def plot_bar_chart(df, stat_col, title_add='', save=False, filename=None):
 
@@ -147,7 +167,13 @@ def plot_bar_chart(df, stat_col, title_add='', save=False, filename=None):
         print(f"Column '{stat_col}' missing")
         return
 
-    # Check if df has 'cores' column (multi-core data)
+    # Filter to only methods in dataframe, preserve order
+    available_methods = [m for m in COMPRESSION_METHODS if m in df['method'].values]
+
+    # Convert to categorical with fixed order
+    df['method'] = pd.Categorical(df['method'], categories=available_methods, ordered=True)
+    df = df.sort_values('method').reset_index(drop=True)
+
     has_cores = 'cores' in df.columns and df['cores'].nunique() > 1
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -179,6 +205,7 @@ def plot_bar_chart(df, stat_col, title_add='', save=False, filename=None):
 
         # Labels
         graph_title = f"{cores_to_plot[0]} vs {cores_to_plot[1]} cores {stat_col} ({title_add})"
+        graph_title = title_add
         ax.set_xticks(x)
         ax.set_xticklabels([m.split('_')[0] for m in pivot_data.index], rotation=45, ha='right')
 
@@ -204,16 +231,16 @@ def plot_bar_chart(df, stat_col, title_add='', save=False, filename=None):
 
     # Common labels
     ax.set_ylabel(stat_col, fontweight='bold')
+    # ax.ticklabel_format(axis='y', style='sci', scilimits=(4, 4))
 
     ax.set_title(graph_title, fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3, linestyle='--')
-    # ax.legend()
 
     # Value labels on bars
-    for bar in all_bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width() / 2., height,
-                f'{height:.3f}', ha='center', va='bottom', fontsize=8)
+    # for bar in all_bars:
+    #     height = bar.get_height()
+    #     ax.text(bar.get_x() + bar.get_width() / 2., height,
+    #             f'{height:.2f}', ha='center', va='bottom', fontsize=8)
 
     plt.tight_layout()
 
@@ -225,9 +252,8 @@ def plot_bar_chart(df, stat_col, title_add='', save=False, filename=None):
 
     plt.show()
 
-
-def plot_compression_scatter_avg(df, x_col, y_col, layout='scan', cores=[1], exclude_methods=None, save=False,
-                                 filename=None):
+def plot_compression_scatter_avg(df, x_col, y_col, layout='scan', cores=[1], categories=[],
+                                title='', exclude_methods=None, save=False, filename=None):
     df = df.copy()
 
     if not isinstance(cores, list): cores = [cores]
@@ -235,28 +261,25 @@ def plot_compression_scatter_avg(df, x_col, y_col, layout='scan', cores=[1], exc
 
     size_col = f'{layout}.size_kb'
 
-    df_filtered = df[df['cores'].astype(int).isin([int(c) for c in cores])].copy()
+    df['cores_clean'] = pd.to_numeric(df['cores'], errors='coerce')
+    df_filtered = df[df['cores_clean'].notna() & df['cores_clean'].isin([int(c) for c in cores])].copy()
+    df_filtered = df_filtered.drop(columns=['cores_clean'])
 
-    needed = [x_col, y_col, size_col]
-    missing = [c for c in needed if c not in df_filtered.columns]
-    if missing:
-        print(f"Missing columns: {missing}")
-        print(f"Available: {list(df_filtered.columns)}")
-        return
+    needed = [x_col, y_col]
 
     avg_df = df_filtered.groupby(['category', 'method'])[needed].mean().reset_index()
+    fig, axes = plt.subplots(len(categories), 1, figsize=(10, 18), sharex=True)
+    fig.suptitle(title, fontsize=16, y=0.99)
 
-    categories = ['Netflix', 'Geo', 'Particles', 'VDB', 'Other']
-
-    fig, axes = plt.subplots(5, 1, figsize=(14, 20), sharex=True)
-    fig.suptitle(f'{layout.upper()} AVG Encode vs Decode (bubble=File Size, {cores[0]}C)', fontsize=16)
+    all_handles = []
+    all_labels = []
 
     for i, cat in enumerate(categories):
         ax = axes[i]
         df_cat = avg_df[avg_df['category'] == cat].copy()
 
         if len(df_cat) == 0:
-            ax.text(0.5, 0.5, f'No {cat} data', ha='center', va='center', transform=ax.transAxes, fontsize=14)
+            ax.text(1 , 0.5, f'No {cat} data', ha='center', va='center', transform=ax.transAxes, fontsize=14)
             ax.set_title(f'{cat}')
             continue
 
@@ -264,46 +287,48 @@ def plot_compression_scatter_avg(df, x_col, y_col, layout='scan', cores=[1], exc
             df_m = df_cat[df_cat['method'] == method]
             x_val, y_val, size_val = df_m[[x_col, y_col, size_col]].iloc[0]
 
-            # Scale bubble size
-            bubble_size = max(40, min(600, size_val * 0.8))
-
-            ax.scatter(x_val, y_val, s=bubble_size,
+            handle = ax.scatter(x_val, y_val, s=200,
                        color=METHOD_COLOR_MAP.get(method, '#888'),
                        alpha=0.85, edgecolors='black', linewidth=1.5, zorder=5)
 
-            # Clean label
             short_name = method.replace('_COMPRESSION', '').split('_')[-1]
-            ax.annotate(short_name, (x_val, y_val),
+
+            texts = [ax.annotate(short_name, (x_val, y_val),
                         xytext=(6, 6), textcoords='offset points',
-                        fontsize=10, fontweight='bold',
-                        bbox=dict(boxstyle='round,pad=0.15', facecolor='white', alpha=0.9))
+                        fontsize=10, fontweight='bold')]
+
+            all_handles.append(handle)
+            all_labels.append(short_name)
 
         ax.grid(True, alpha=0.3, zorder=0)
         n_methods = len(df_cat)
         ax.set_title(f'{cat} ({n_methods} methods)')
-        if i == 4:
-            ax.set_xlabel('Encode time (ms)')
-            ax.set_ylabel('Decode time (ms)')
-        else:
-            ax.set_ylabel('Decode (ms)')
+        ax.set_xlabel(x_col)
+        ax.set_ylabel(y_col)
 
-    legend_methods = ['PIZ', 'ZIP', 'ZIPS', 'HTJ2K256', 'HTJ2K32']
-    legend_colors = [METHOD_COLOR_MAP.get(f'{m}_COMPRESSION', '#888') for m in legend_methods]
-    from matplotlib.lines import Line2D
-    legend_elements = [Line2D([0], [0], marker='o', color='w',
-                              markerfacecolor=c, markersize=20,
-                              markeredgecolor='black') for c in legend_colors]
-    fig.legend(legend_elements, legend_methods, loc='upper right', bbox_to_anchor=(0.98, 0.98))
+    # Deduplicate after all loops
+    seen = set()
+    unique_handles = []
+    unique_labels = []
+    for label, handle in zip(all_labels, all_handles):
+        if label not in seen:
+            seen.add(label)
+            unique_labels.append(label)
+            unique_handles.append(handle)
+
+    fig.legend(unique_handles, unique_labels,
+               loc='upper right', bbox_to_anchor=(0.98, 0.98), fontsize=9,
+               title='Methods', title_fontsize=10, framealpha=0.95)
 
     plt.tight_layout()
-    plt.subplots_adjust(right=0.82)
+    plt.subplots_adjust(right=0.85)  # Reserve space for legend
 
     if save and filename:
         fpath = os.path.join(graphs_dir, filename)
         plt.savefig(fpath, dpi=300, bbox_inches='tight')
-        print(f'✅ Saved: {fpath} | {len(avg_df)} total method-category pairs')
 
     plt.show()
+
 
 
 def roi_full_table(df):
@@ -319,22 +344,20 @@ def roi_full_table(df):
     pd.reset_option('display.max_columns')
 
 GROUP_CATEGORIES = {
-    'Chimera': 'Netflix',
     'CosmosLaundromat': 'Netflix',
     'Meridian': 'Netflix',
     'Sparks': 'Netflix',
 
     '0010_TestSand_Robot_Comp': 'Geo',
-    '0160_Shadow_Comp': 'Geo',
     '0130_Geo_Comp': 'Geo',
     '0160_Geo_Front_Comp': 'Geo',
     '0160_Geo_Back_Comp': 'Geo',
 
 
     '0010_TestSand_Sand_Comp': 'Particles',
-    '0130_Wind_Comp': 'Other',
-
-    '0010_TestSand_VDB_Comp': 'Other',
+    # '0130_Wind_Comp': 'Other',
+    #
+    # '0010_TestSand_VDB_Comp': 'Other',
     '0130_VDB_Comp': 'VDB'
 }
 
@@ -344,37 +367,101 @@ def analyse(dir_path):
     df = load_data(dir_path)
     print(f"Loaded: {len(df)} rows, {len(df['file'].unique())} images")
     print(f"Cores: {sorted(df['cores'].unique())}")
-    print(f"Groups: {sorted(df['group'].unique())}")
+    groups = sorted([g for g in df['group'].dropna().unique() if g is not None])
+    print(f"Groups: {groups}")
 
     exclude_lossy = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION', "PXR24_COMPRESSION", "DWAA_COMPRESSION", "DWAB_COMPRESSION"]
-    exclude_lossy_extremes = ['NO_COMPRESSION', 'RLE_COMPRESSION', 'B44_COMPRESSION', 'B44A_COMPRESSION']
+    exclude_lossy_extremes = ['B44_COMPRESSION', 'B44A_COMPRESSION']
 
-    # 1. Single-core, all groups, read speed (SCAN)
-    print("\n\n[1] SCANLINE - 1-CORE READ SPEED")
+    cats = ['Geo', 'Particles', 'VDB', 'Netflix']
 
-    df_1c_read = query_stats(df, layout='scan', cores=[1, 16], exclude_methods=exclude_lossy)
-    # plot_bar_chart(df_1c_read, 'scan.read_ms', 'Scanline 1 vs 16-Core Read Speed', save=False, filename='1_scan_read_1c.png')
-    # plot_bar_chart(df_1c_read, 'scan.size_kb', 'Scanline 1-Core Read Speed', save=False, filename='1_scan_read_1c.png')
-    # friedman_analysis(df, ['scan.read_ms'], cores=1)
+
 
     df['category'] = df['group'].map(GROUP_CATEGORIES)
+    cats = ['Geo', 'Particles', 'VDB', 'Netflix']
 
+    # 1-core aggregation
+    df_agg_1c = df[df['cores'] == 1].groupby(['category', 'method'])[
+        ['scan.read_ms', 'scan.size_kb']].mean().reset_index()
+    df_agg_1c['cores'] = 1
+
+
+    df_agg = df.groupby(['category', 'method'])[['scan.read_ms', 'scan.size_kb']].mean().reset_index()
+
+
+    # Image differences
+    # plot_compression_scatter_avg(df_agg_1c, 'scan.read_ms', 'scan.size_kb', cores=[1],
+    #                              categories=cats,
+    #                              title=f'AVG Encode vs Decode by Image Type (1 core)',
+    #                              filename='avg_scan_encode_vs_decode_1c.png',
+    #                              save=True)
+    #
+    # df_agg_16c = df[df['cores'] == 16].groupby(['category', 'method'])[
+    #     ['scan.read_ms', 'scan.size_kb']].mean().reset_index()
+    # df_agg_16c['cores'] = 16
+    #
+    # plot_compression_scatter_avg(df_agg_16c, 'scan.read_ms', 'scan.size_kb', cores=[16],
+    #                              categories=cats,
+    #                              title=f'AVG Encode vs Decode by Image Type (16 cores)',
+    #                              filename='avg_scan_encode_vs_decode_16c.png',
+    #                              save=True)
+
+
+
+
+    # methods 1 vs 16 cores
+    df_read = query_stats(df, layout='scan', cores=[1, 16], aggregate=True)
+    # plot_bar_chart(df_read, 'scan.read_ms', 'Scanline 1 vs 16-Core Read Speed', save=True,
+    #                filename='scan_read_1-16.png')
+    # plot_bar_chart(df_read, 'scan.write_ms', 'Scanline 1 vs 16-Core Write Speed', save=True,
+    #                filename='scan_write_1-16.png')
+    # plot_bar_chart(df_read, 'scan.size_kb', 'Scanline 1 vs 16-Core File Size', save=True,
+    #                filename='scan_size_1-16.png')
+
+    # df_read = query_stats(df, layout='scan', cores=[1, 16])
+    # friedman_analysis(df, ['scan.read_ms'], cores=1)
+    # friedman_analysis(df, ['scan.write_ms'], cores=1)
+    # friedman_analysis(df, ['scan.size_kb'], cores=1)
+    #
+    # friedman_analysis(df, ['scan.read_ms'], cores=16)
+    # friedman_analysis(df, ['scan.write_ms'], cores=16)
+    # friedman_analysis(df, ['scan.size_kb'], cores=16)
+
+    summary = df.groupby(['method', 'cores', 'category'])[['scan.read_ms', 'scan.write_ms', 'scan.size_kb']].mean().round(2)
+    summary = summary.reset_index().sort_values(['scan.size_kb', 'method'])
+
+
+    print("\n" + "=" * 100)
+    print("COMPRESSION ALGORITHM SUMMARY (By Core Count)")
+    print("=" * 100)
+    print(summary.to_string(index=False))
+    print("=" * 100)
+
+
+
+
+
+
+    # category = 'Netflix'  # or any group from your list
+    # df_single_cat = df[df['category'] == category].copy()
+    #
+    # df_read = query_stats(df_single_cat, layout='scan', cores=[1, 16], aggregate=False)
+    # friedman_analysis(df_read, ['scan.read_ms'], cores=1)
+
+
+
+
+    # df['category'] = df['group'].map(GROUP_CATEGORIES)
+    #
     # for category in df['category'].unique():
     #     df_category = df[df['category'] == category]
     #     groups_in_cat = df_category['group'].unique()
-    #     df_1c_read = query_stats(df_category, layout='scan', cores=[1, 16],
-    #                              metrics=['read_ms'], exclude_methods=exclude_lossy)
-    #     plot_bar_chart(df_1c_read, 'scan.read_ms', f'{category}', save=False, filename='1_scan_read_1c.png')
-
-
-    # TILED version (HTJ2K shines)
-    plot_compression_scatter_avg(df, 'scan.write_ms', 'scan.read_ms', cores=[1],
-                                 exclude_methods=exclude_lossy_extremes, filename='avg_scan_encode_vs_decode.png')
-
-    # plot_compression_scatter_avg(df, 'tiled.write_ms', 'tiled.read_ms', cores=[16],
-    #                              exclude_methods=exclude_lossy_extremes, filename='avg_tiled_encode_vs_decode.png')
-
-
+    #
+    #     # Get raw file-level data for Friedman test
+    #     df_1c_read = query_stats(df_category, layout='scan', cores=[1], aggregate=False)
+    #
+    #     if len(df_1c_read) > 0:
+    #         friedman_analysis(df_1c_read, ['scan.read_ms'], cores=1)
 
 
 
