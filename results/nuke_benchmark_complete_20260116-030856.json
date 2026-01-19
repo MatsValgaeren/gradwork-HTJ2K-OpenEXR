@@ -1,0 +1,278 @@
+[
+  {
+    "compression": "RLE_COMPRESSION",
+    "timestamp": "2026-01-16 03:00",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 12.73,
+    "overall_std_fps": 8.09,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 6.42,
+        "std_fps": 0.08
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 6.17,
+        "std_fps": 1.25
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 5.19,
+        "std_fps": 0.99
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 9.52,
+        "std_fps": 3.39
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 8.33,
+        "std_fps": 1.56
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 8.79,
+        "std_fps": 1.57
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 23.19,
+        "std_fps": 3.58
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 23.94,
+        "std_fps": 4.07
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 23.03,
+        "std_fps": 3.69
+      }
+    }
+  },
+  {
+    "compression": "ZIP_COMPRESSION",
+    "timestamp": "2026-01-16 03:02",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 12.59,
+    "overall_std_fps": 6.86,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 6.76,
+        "std_fps": 1.1
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 6.26,
+        "std_fps": 1.07
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 6.09,
+        "std_fps": 0.61
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 12.51,
+        "std_fps": 1.11
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 8.15,
+        "std_fps": 0.43
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 8.57,
+        "std_fps": 0.23
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 21.44,
+        "std_fps": 2.35
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 22.03,
+        "std_fps": 2.25
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 21.53,
+        "std_fps": 2.48
+      }
+    }
+  },
+  {
+    "compression": "PIZ_COMPRESSION",
+    "timestamp": "2026-01-16 03:04",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 10.37,
+    "overall_std_fps": 7.37,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 4.85,
+        "std_fps": 0.64
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 4.18,
+        "std_fps": 0.52
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 3.76,
+        "std_fps": 0.32
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 8.28,
+        "std_fps": 0.67
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 5.26,
+        "std_fps": 0.28
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 5.69,
+        "std_fps": 0.11
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 19.35,
+        "std_fps": 1.79
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 21.12,
+        "std_fps": 2.13
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 20.82,
+        "std_fps": 2.26
+      }
+    }
+  },
+  {
+    "compression": "ZIPS_COMPRESSION",
+    "timestamp": "2026-01-16 03:05",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 15.86,
+    "overall_std_fps": 6.95,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 8.44,
+        "std_fps": 2.01
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 7.33,
+        "std_fps": 1.63
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 9.01,
+        "std_fps": 1.8
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 16.11,
+        "std_fps": 2.74
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 14.02,
+        "std_fps": 2.23
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 16.49,
+        "std_fps": 1.88
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 23.48,
+        "std_fps": 3.81
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 24.2,
+        "std_fps": 3.74
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 23.65,
+        "std_fps": 3.93
+      }
+    }
+  },
+  {
+    "compression": "HTJ2K32_COMPRESSION",
+    "timestamp": "2026-01-16 03:07",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 12.44,
+    "overall_std_fps": 6.67,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 6.92,
+        "std_fps": 1.13
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 6.23,
+        "std_fps": 1.04
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 6.06,
+        "std_fps": 0.62
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 12.34,
+        "std_fps": 1.1
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 8.09,
+        "std_fps": 0.48
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 8.51,
+        "std_fps": 0.21
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 20.71,
+        "std_fps": 2.19
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 21.84,
+        "std_fps": 2.29
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 21.26,
+        "std_fps": 2.35
+      }
+    }
+  },
+  {
+    "compression": "HTJ2K256_COMPRESSION",
+    "timestamp": "2026-01-16 03:08",
+    "num_sequences": 9,
+    "num_passes": 10,
+    "overall_avg_fps": 12.38,
+    "overall_std_fps": 6.56,
+    "per_sequence": {
+      "0010_TestSand_Robot_Comp": {
+        "avg_fps": 6.95,
+        "std_fps": 1.13
+      },
+      "0010_TestSand_Sand_Comp": {
+        "avg_fps": 6.27,
+        "std_fps": 1.05
+      },
+      "0130_Geo_Comp": {
+        "avg_fps": 6.08,
+        "std_fps": 0.65
+      },
+      "0130_VDB_Comp": {
+        "avg_fps": 12.38,
+        "std_fps": 1.04
+      },
+      "0160_Geo_Back_Comp": {
+        "avg_fps": 8.05,
+        "std_fps": 0.52
+      },
+      "0160_Geo_Front_Comp": {
+        "avg_fps": 8.57,
+        "std_fps": 0.18
+      },
+      "CosmosLaundromat_2k24p_HDR_P3PQ": {
+        "avg_fps": 20.9,
+        "std_fps": 2.45
+      },
+      "Meridian_UHD4k5994p_HDR_P3PQ": {
+        "avg_fps": 21.31,
+        "std_fps": 2.36
+      },
+      "SPARKS_P3_PQ_4000nit": {
+        "avg_fps": 20.88,
+        "std_fps": 2.2
+      }
+    }
+  }
+]
