@@ -18,8 +18,13 @@ compression_map = {
     'ZIP_COMPRESSION': 'zip',
     'PIZ_COMPRESSION': 'piz',
     'ZIPS_COMPRESSION': 'zips',
-    'HTJ2K32_COMPRESSION':  'htj2k:rate=32',
-    'HTJ2K256_COMPRESSION': 'htj2k:rate=256'
+    'PXR24_COMPRESSION': 'pxr24',
+    'B44_COMPRESSION': 'b44',
+    'B44A_COMPRESSION': 'b44a',
+    'DWAA_COMPRESSION': 'dwaa',
+    'DWAB_COMPRESSION': 'dwab',
+    'HTJ2K32_COMPRESSION': 'htj2k',
+    'HTJ2K256_COMPRESSION': 'htj2k'
 }
 
 ROIS = [
@@ -29,9 +34,8 @@ ROIS = [
 ]
 
 
-PASSES = 1
+PASSES = 3
 image_dir = "./images"
-# image_dir = r'E:\gw\test'
 os.makedirs(image_dir, exist_ok=True)
 temp_dir = r"E:\gw\temp"
 os.makedirs(temp_dir, exist_ok=True)
@@ -58,7 +62,7 @@ def go_over_cores():
 def go_over_compression(num_threads):
     results = []
     for compression in compression_map:
-        results.extend(go_over_files(num_threads, compression, image_dir))
+        # results.extend(go_over_files(num_threads, compression, image_dir))
         results.extend(go_over_files(num_threads, compression, image_dir, calc_tile=True))
         remove_files(temp_dir)
     result_file = result_dir + '/file-data_' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + '.json'
@@ -94,7 +98,7 @@ def go_over_files(num_cores, compression_method, input_dir, calc_tile=False):
             # color space
             color_space = spec.get_string_attribute("ocio:ColorSpace", "linear")
 
-            results.append({
+            result = {
                 "processor": platform.processor(),
                 "cores": num_cores,
                 "method": compression_method,
@@ -114,19 +118,20 @@ def go_over_files(num_cores, compression_method, input_dir, calc_tile=False):
                     "size_kb": res_scan['size_kb'],
                     "roi_decode_ms": res_scan["roi_decode_ms"]
                 }
-            })
+            }
 
             if calc_tile:
                 res_tile = go_over_scantile(root, filename, compression_method, scan=False, calc_roi=True)
 
-                results.append({
+                result["tiled"] = {
                     "tiled": {
                         "read_ms": res_tile["read_ms"],
                         "write_ms": res_tile['write_ms'],
                         "size_kb": res_tile['size_kb'],
                         "roi_decode_ms": res_tile["roi_decode_ms"]
                     }
-                })
+                }
+            results.append(result)
     return results
 
 def go_over_scantile(root, filename, compression_method, scan=True, calc_roi=True):
@@ -145,12 +150,10 @@ def go_over_scantile(root, filename, compression_method, scan=True, calc_roi=Tru
         oiio_comp = compression_map.get(compression_method)
 
         comp_res = recompress_oiio.recompress(old_file_path, new_file_path, comp=oiio_comp, scanline=scan, passes=PASSES)
-
         res = {'read': []}
 
         temps = []
         for i in range(PASSES):
-            # cold cache
             tmp = new_file_path.replace(".exr", f"_p{i}.exr")
             temps.append(tmp)
             shutil.copyfile(new_file_path, tmp)
