@@ -12,7 +12,7 @@ from matplotlib.ticker import MultipleLocator
 
 from scipy.stats import friedmanchisquare
 
-result_dir = "./results"
+result_dir = "results"
 graphs_dir = "./graphs"
 
 COMPRESSION_METHODS = [

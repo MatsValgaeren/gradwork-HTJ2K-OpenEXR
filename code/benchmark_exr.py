@@ -39,7 +39,7 @@ image_dir = "./images"
 os.makedirs(image_dir, exist_ok=True)
 temp_dir = r"E:\gw\temp"
 os.makedirs(temp_dir, exist_ok=True)
-result_dir = "./results"
+result_dir = "results"
 os.makedirs(result_dir, exist_ok=True)
 
 
